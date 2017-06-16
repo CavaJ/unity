@@ -1,0 +1,260 @@
+apply plugin: 'com.android.library' //'com.android.application' //for non-library project
+
+android {
+    compileSdkVersion 25
+    buildToolsVersion "25.0.3"
+
+    //for disabling default folder in build/intermediates/bundles/
+    //in this case debug and release folders will remain
+    publishNonDefault true
+
+
+    defaultConfig {
+        //applicationId "com.denkwerk.nfcplugin" // library project cannot have application id
+        minSdkVersion 14
+        targetSdkVersion 22
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    //compile fileTree(dir: 'libs', include: ['*.jar']) //UNITY => IOException: Failed to Move File / Directory from 'Temp/StagingArea\android-libraries\nfcplugin\classes.jar' to 'Temp/StagingArea\android-libraries\nfcplugin\libs\classes.jar'.
+
+    //createAar() will create aar with empty libs directory
+    //ok for createJarWithDependencies()
+    //provided fileTree(dir: 'libs', include: ['*.jar'])
+
+
+    // will skip libs/classes.jar in final aar and/or jar
+    // can be used with both createAar()
+    // and createJarWithDependencies().
+    // before createAar(), copyJarsFromConfigToLibs() should be called
+    // for having all dependent jars in libs folder.
+    compile fileTree(dir: 'libs', include: ['*.jar'],
+            exclude: 'classes.jar')
+    provided fileTree(dir: 'libs', include: 'classes.jar')
+
+
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+
+
+    //Unity projects does not require support library, causing exceptions in manifest merging
+    //compile 'com.android.support:appcompat-v7:25.3.1'
+    //compile 'com.android.support.constraint:constraint-layout:1.0.2'
+
+
+    testCompile 'junit:junit:4.12'
+    compile group: 'com.google.guava', name: 'guava', version: '17.0'
+}
+
+
+
+// -----  CUSTOM JAR EXPORT -----
+
+/*
+//command for deleting already exported jar file
+task deleteJar(type: Delete) {
+    delete 'build/libs/jars/' //nfcplugin-base.jar'
+}
+
+
+//command for exporting jar file
+task createJar(type: Copy) {
+    from('build/intermediates/bundles/release/')
+    into('build/libs/jars/')
+    include('classes.jar')
+    rename('classes.jar', 'nfcplugin-base.jar')
+}
+
+//create jar depends on deleteJar and build
+createJar.dependsOn(deleteJar, build)
+*/
+
+// -----  CUSTOM JAR EXPORT -----
+
+
+
+
+// -----  CUSTOM AAR EXPORT -----
+
+//command for deleting already exported aar file
+task deleteAar(type: Delete) {
+    delete 'build/libs/aars/' //nfcplugin.aar'
+}
+
+
+//command for exporting aar file
+task createAar(type: Copy) {
+    from('build/outputs/aar/')
+    into('build/libs/aars/')
+    include('app-release.aar')
+    rename('app-release.aar', 'nfcplugin.aar')
+}
+
+
+//copying jars from configurations to libs dir
+task copyJarsFromConfigToLibs(type: Copy,
+        dependsOn: 'cleanLibsDirWithExclude') {
+
+    from configurations.compile
+    into 'libs'
+}
+
+//clean previously copied jars
+task cleanLibsDirWithExclude(type: Delete) {
+    delete fileTree(dir: "libs", exclude: "classes.jar")
+}
+
+//create aar depends on deleteAar and build
+//copyJarsFromConfigToLibs MUST BE EXECUTED BEFORE to create FAT AAR
+createAar.dependsOn(deleteAar, build)
+
+
+// -----  CUSTOM AAR EXPORT -----
+
+
+
+
+// -----  CUSTOM JAR EXPORT WITH DEPENDENCIES -----
+task jarTask(type: Jar) {
+    //baseName="my-sdk-android"
+    //from 'src/main/java' // only includes .java files of project
+    //from android.sourceSets.main.java // Error
+
+
+    //will contain only .class files of the project
+    baseName="nfcplugin-base"
+
+    // Change from 'src/main/java' to from 'build/intermediates/classes/release/'
+    // and it will package the .class files
+    // instead of the .java files.
+    from('build/intermediates/classes/release/')
+}
+
+// Include dependent libraries in archive.
+def mainClassName = "com.denkwerk.nfcplugin.NFCPluginTest"
+
+//command for exporting jar file with dependencies
+task createJarWithDependencies(type: Jar) {
+
+    manifest {
+        attributes 'Implementation-Title': 'NFC Plugin',
+                'Implementation-Version': project.version,
+                'Main-Class': "$mainClassName"
+    }
+
+    //baseName = "my-sdk-android-jar-with-dependencies"
+    baseName = "nfcplugin-fat"
+
+    from {
+        configurations.compile.collect {
+            it.isDirectory() ? it : zipTree(it)
+        }
+    }
+
+    with jarTask
+}
+
+//command for deleting already exported jar file
+task deleteJarWithDependencies(type: Delete,
+        dependsOn: 'cleanLibsDirWithExclude') {
+
+    delete 'build/libs/nfcplugin-fat.jar'
+}
+
+//create jar depends on deleteJar and build
+jarTask {  delete 'build/libs/nfcplugin-base.jar' }.dependsOn
+createJarWithDependencies.dependsOn(deleteJarWithDependencies, build)
+
+configurations {
+    jarConfiguration
+}
+
+artifacts {
+    jarConfiguration jarTask
+}
+// -----  CUSTOM JAR EXPORT WITH DEPENDENCIES -----
+
+
+
+/*
+//Custom configuration with dependencies and tasks
+configurations{
+    myConf {
+        description = "my dependencies"
+        transitive = true
+    }
+}
+dependencies {
+    myConf fileTree(dir: 'libs', include: ['*.jar'])
+
+    myConf androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+
+
+    //Unity projects does not require support library, causing exceptions in manifest merging
+    //compile 'com.android.support:appcompat-v7:25.3.1'
+    //compile 'com.android.support.constraint:constraint-layout:1.0.2'
+
+
+    myConf 'junit:junit:4.12'
+    myConf group: 'com.google.guava', name: 'guava', version: '17.0'
+}
+
+
+task compilePlugin(type: JavaCompile ) {
+    //...
+    classpath=configurations.myConf
+    //...
+}
+
+task copyLibs(type: Copy) {
+    //classpath=configurations.myConf
+
+    from configurations.compile {
+        //exclude 'classes.jar'
+    }
+    into 'libs' //'build/intermediates/bundles/release/libs'
+    exclude 'classes.jar'
+}
+
+
+task cleanLibsDir(type: Delete) {
+    delete fileTree(dir: "libs", exclude: "classes.jar") // delete fileTree(dir: "build/intermediates/bundles/release/libs")
+}
+
+
+task fatAar(type: Copy) {
+    from('build/outputs/aar/')
+    into('build/libs/aars/')
+    include('app-release.aar')
+    rename('app-release.aar', 'nfcplugin-all.aar')
+}
+
+// execution flow:
+// cleanLibsDir -> compilePlugin -> copyLibs -> build -> fatArr
+compilePlugin.dependsOn(cleanLibsDir)
+copyLibs.dependsOn(compilePlugin)
+build.dependsOn(copyLibs)
+fatAar.dependsOn(build)
+*/
+
+
+//task for deleting created aars, jars, and copies
+task deleteAll(type: Delete) {
+    delete 'build/libs/aars/'
+    delete 'build/libs/jars/'
+    delete 'build/libs/nfcplugin-fat.jar'
+    delete fileTree(dir: "libs", exclude: "classes.jar")
+}
